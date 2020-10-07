@@ -4,7 +4,9 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:jukebox_app/domains/model/HashModel.dart';
 import 'package:jukebox_app/domains/bloc/AuthBloc.dart';
+import 'package:jukebox_app/domains/service/AuthService.dart';
 import 'package:jukebox_app/support/components/AppButton.dart';
 import 'package:jukebox_app/support/components/CircularProgress.dart';
 import 'package:jukebox_app/support/components/Toolbar.dart';
@@ -12,9 +14,10 @@ import 'package:jukebox_app/support/utils/AppColors.dart';
 import 'package:jukebox_app/support/utils/Navigation.dart';
 import 'package:jukebox_app/support/utils/NotificationMessage.dart';
 import 'package:jukebox_app/support/utils/StringUtils.dart';
+import 'package:jukebox_app/views/components/HashDialog.dart';
 import 'package:jukebox_app/views/components/PasswordDialog.dart';
-import 'package:jukebox_app/views/pages/HomePage.dart';
-import 'package:jukebox_app/views/pages/SignUp.dart';
+import 'package:jukebox_app/views/pages/UserList.dart';
+import 'package:jukebox_app/views/pages/UserForm.dart';
 
 class SignIn extends StatefulWidget { @override _SignInState createState() => _SignInState(); }
 
@@ -110,10 +113,10 @@ class _SignInState extends State<SignIn> {
                                   title: 'Cadastrar',
                                   icon: Icons.add,
                                   color: AppColors.green,
-                                  onPressed: () => next(context, SignUp(), replacement: true),
+                                  onPressed: () => next(context, UserForm(fromLogin: true,), replacement: true),
                                 ),
                                 StreamBuilder<bool>(
-                                  stream: _authBloc.stream,
+                                  stream: _authBloc.streamLoad,
                                   initialData: false,
                                   builder: (context, snapshot) =>
                                     snapshot.data ? CircularProgress() :
@@ -144,6 +147,22 @@ class _SignInState extends State<SignIn> {
                         ),
                       ),
                     ),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                          child: AppButton(
+                            id: 'btnHash',
+                            title: 'Alterar Hash',
+                            color: AppColors.purple,
+                            icon: Icons.settings,
+                            onPressed: _hashDialog,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               );
@@ -162,7 +181,7 @@ class _SignInState extends State<SignIn> {
         _emailController.text,
         md5.convert(utf8.encode(_passwordController.text)).toString(),
       );
-      (_result.startsWith(StringUtils.OK)) ? next(context, HomePage(), replacement: true)
+      (_result.startsWith(StringUtils.OK)) ? next(context, UserList(), replacement: true)
         : NotificationMessage.instance.warning(context, _result);
     }
     else { _ctrlValidator.add(true);}
@@ -198,6 +217,18 @@ class _SignInState extends State<SignIn> {
         }
       )
     );
+  }
+
+  _hashDialog() {
+    return showDialog(
+      context: context,
+      builder: (BuildContext buildContext) => HashDialog(
+        onPressed: (String hash) {
+          back(buildContext);
+          var _hash = HashModel(hash: hash);
+          _hash.store();
+          hashUsed = _hash;
+        },),);
   }
 
   @override

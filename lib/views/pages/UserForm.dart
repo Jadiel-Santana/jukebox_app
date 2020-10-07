@@ -5,7 +5,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jukebox_app/domains/bloc/AuthBloc.dart';
+import 'package:jukebox_app/domains/model/HashModel.dart';
 import 'package:jukebox_app/domains/model/User.dart';
+import 'package:jukebox_app/domains/service/AuthService.dart';
 import 'package:jukebox_app/support/components/AppButton.dart';
 import 'package:jukebox_app/support/components/CircularProgress.dart';
 import 'package:jukebox_app/support/components/Toolbar.dart';
@@ -14,12 +16,19 @@ import 'package:jukebox_app/support/utils/DateUtils.dart';
 import 'package:jukebox_app/support/utils/Navigation.dart';
 import 'package:jukebox_app/support/utils/NotificationMessage.dart';
 import 'package:jukebox_app/support/utils/StringUtils.dart';
-import 'package:jukebox_app/views/pages/HomePage.dart';
+import 'package:jukebox_app/views/components/HashDialog.dart';
 import 'package:jukebox_app/views/pages/SignIn.dart';
+import 'package:jukebox_app/views/pages/UserList.dart';
 
-class SignUp extends StatefulWidget { @override _SignUpState createState() => _SignUpState(); }
+class UserForm extends StatefulWidget {
+  final bool fromLogin;
+  final User user;
+  UserForm({this.user, this.fromLogin = false});
 
-class _SignUpState extends State<SignUp> {
+  @override _UserFormState createState() => _UserFormState();
+}
+
+class _UserFormState extends State<UserForm> {
   final _formKey = GlobalKey<FormState>();
   final _ctrlValidator = StreamController<bool>.broadcast();
   final _ctrlObscureText = StreamController<bool>.broadcast();
@@ -29,13 +38,34 @@ class _SignUpState extends State<SignUp> {
   final _passwordController = TextEditingController(text: '');
   final _authBloc = AuthBloc();
 
+  User get user => widget.user;
+
+  @override
+  void initState() {
+    super.initState();
+    if(user != null) {
+      _nameController.text = user.name;
+      _dateController.text = user.birthday;
+      _emailController.text = user.email;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).backgroundColor,
       appBar: Toolbar(
-        title: 'Criar minha conta',
-        iconActionVisible: false,
+        title: (widget.fromLogin) ? 'Criar minha conta' : (user == null) ? 'Criar Usuário' : 'Alterar Usuário',
+        iconActionVisible: (widget.fromLogin) ? false : true,
+        actions: (!widget.fromLogin) ? [
+          IconButton(
+            icon: Icon(Icons.exit_to_app),
+            onPressed: () {
+              _authBloc.signOut();
+              next(context, SignIn(), replacement: true);
+            },
+          ),
+        ] : null,
       ),
       body: Center(
         child: SingleChildScrollView(
@@ -146,7 +176,7 @@ class _SignUpState extends State<SignUp> {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 20),
                               child: StreamBuilder<bool>(
-                                stream: _authBloc.stream,
+                                stream: _authBloc.streamLoad,
                                 initialData: false,
                                 builder: (context, snapshot) =>
                                 snapshot.data ? CircularProgress() :
@@ -163,18 +193,41 @@ class _SignUpState extends State<SignUp> {
                         ),
                       ),
                     ),
-                    Column(
+                    (widget.fromLogin) ? Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          AppButton(
+                            id: 'btnBackSignIn',
+                            title: 'Login',
+                            color: AppColors.accent,
+                            icon: Icons.keyboard_backspace,
+                            size: 160,
+                            onPressed: () => next(context, SignIn(), replacement: true),
+                          ),
+                          AppButton(
+                            id: 'btnHash',
+                            title: 'Alterar Hash',
+                            color: AppColors.purple,
+                            icon: Icons.settings,
+                            size: 160,
+                            onPressed: _hashDialog,
+                          ),
+                        ],
+                      ),
+                    ) : Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                           child: AppButton(
-                            id: 'btnBackSignIn',
-                            title: 'Já tenho uma conta',
-                            color: AppColors.accent,
-                            icon: Icons.keyboard_backspace,
-                            onPressed: () => next(context, SignIn(), replacement: true),
+                            id: 'btnHashSingle',
+                            title: 'Alterar Hash',
+                            color: AppColors.purple,
+                            icon: Icons.settings,
+                            onPressed: _hashDialog,
                           ),
                         ),
                       ],
@@ -218,11 +271,35 @@ class _SignUpState extends State<SignUp> {
         password: md5.convert(utf8.encode(_passwordController.text)).toString(),
         birthday: _dateController.text,
       );
-      String _result = await _authBloc.signUp(_user);
-      (_result.startsWith(StringUtils.OK)) ? next(context, HomePage(), replacement: true)
-        : NotificationMessage.instance.warning(context, _result);
+      String _result = '';
+      if(user == null) {
+        _result = await _authBloc.signUp(_user);
+        (_result.startsWith(StringUtils.OK)) ? next(context, UserList(), replacement: true)
+          : NotificationMessage.instance.warning(context, _result);
+      } else {
+        _user.id = user.id;
+        _result = await _authBloc.update(_user);
+        if(_result.startsWith(StringUtils.OK)){
+          next(context, UserList(), replacement: true);
+          NotificationMessage.instance.success(context, 'Usuário alterado com sucesso');
+        } else {
+          NotificationMessage.instance.warning(context, _result);
+        }
+      }
     }
     else { _ctrlValidator.add(true);}
+  }
+
+  _hashDialog() {
+    return showDialog(
+      context: context,
+      builder: (BuildContext buildContext) => HashDialog(
+        onPressed: (String hash) {
+          back(buildContext);
+          var _hash = HashModel(hash: hash);
+          _hash.store();
+          hashUsed = _hash;
+        },),);
   }
 
   @override
